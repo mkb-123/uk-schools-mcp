@@ -135,22 +135,9 @@ uk-schools-mcp/
     └── claude_desktop_config.json
 ```
 
-## Integration Options
+## Data Sources
 
-### Option 1: Connect to Your Deployed API
-Point the MCP server to your existing school-finder API at `https://school-finder.fly.dev/`:
-
-```python
-async with httpx.AsyncClient() as client:
-    response = await client.get(
-        "https://school-finder.fly.dev/api/schools",
-        params={"council": "Milton Keynes"}
-    )
-    schools = response.json()
-```
-
-### Option 2: Direct API Calls
-Make direct calls to GIAS, Ofsted, and DfE APIs:
+The server fetches data directly from official government APIs:
 
 ```python
 # GIAS establishment data
@@ -161,14 +148,6 @@ ofsted_url = "https://files.ofsted.gov.uk/downloads/data/management_information_
 
 # DfE Explore Education Statistics
 dfe_api = "https://api.education.gov.uk/statistics/v1"
-```
-
-### Option 3: Reuse Your Code
-Import your existing school-finder modules as a library:
-
-```python
-from school_finder.services.geocoding import geocode_postcode
-from school_finder.services.catchment import calculate_distance
 ```
 
 ## Contributing
