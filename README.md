@@ -4,35 +4,30 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that provides
 
 ## Features
 
-🏫 **Comprehensive School Data**
-- Search schools by name, postcode, or local authority
-- Get detailed school information (type, phase, age range, contact details)
-- Access Ofsted ratings and inspection history
-- View academic performance data (SATs, GCSEs, Progress 8)
-- Find schools within catchment areas
+- Search schools by name, postcode, or local authority (GIAS bulk data)
+- Get detailed school information (type, phase, age range, capacity, contact details)
+- Find schools near a postcode with distance sorting (Postcodes.io geocoding)
+- Compare schools side-by-side
+- Browse DfE education statistics (performance, absence, exclusions, admissions)
+- Links to Ofsted inspection reports
 
-📊 **Official Data Sources**
-- [Get Information About Schools (GIAS)](https://www.get-information-schools.service.gov.uk/)
-- [Ofsted Data View](https://www.gov.uk/government/statistical-data-sets/ofsted-inspection-data)
-- [Explore Education Statistics API](https://explore-education-statistics.service.gov.uk/)
+## Data Sources
+
+| Source | Type | Auth | What it provides |
+|--------|------|------|-----------------|
+| [GIAS](https://get-information-schools.service.gov.uk/) | Bulk CSV (daily) | None | All ~65k schools: name, URN, type, phase, address, capacity, pupils, head teacher, SEN, etc. |
+| [Postcodes.io](https://postcodes.io/) | REST JSON API | None | UK postcode geocoding (lat/lng) for catchment area searches |
+| [Explore Education Statistics](https://explore-education-statistics.service.gov.uk/) | REST JSON API | None | DfE publications: performance tables, absence, exclusions, applications & offers, workforce |
+| [Ofsted](https://reports.ofsted.gov.uk/) | Report links | None | Inspection report URLs generated from URN |
 
 ## Installation
 
 ### Using uv (recommended)
 
 ```bash
-# Create new repo
-mkdir uk-schools-mcp && cd uk-schools-mcp
-git init
-
-# Initialize Python project
-uv init
-uv add mcp httpx polars pydantic
-
-# Copy server code
-# (Add your server.py here)
-
-# Run the server
+git clone https://github.com/yourusername/uk-schools-mcp.git
+cd uk-schools-mcp
+uv sync --all-extras
 uv run python -m uk_schools_mcp.server
 ```
 
@@ -64,56 +59,45 @@ Add to your Claude Desktop configuration (`~/Library/Application Support/Claude/
 }
 ```
 
-Restart Claude Desktop, and you'll see the UK Schools server available in the MCP menu (🔌 icon).
-
 ## Available Tools
 
 ### `search_schools`
-Search for schools by name, postcode, or local authority.
+Search for UK schools by name, postcode, or local authority using GIAS data.
 
-**Example:**
-> "Find primary schools in Milton Keynes"
+**Example:** "Find primary schools in Milton Keynes"
 
 ### `get_school_details`
-Get comprehensive details for a specific school including Ofsted rating, performance data, clubs, and admissions criteria.
+Get comprehensive details for a specific school by URN, including links to Ofsted reports and the GIAS page.
 
-**Example:**
-> "Show me details for Knowles Nursery School (URN: 109825)"
+**Example:** "Show me details for URN 109825"
 
-### `get_ofsted_rating`
-Get current Ofsted rating and inspection history with trajectory analysis.
+### `find_schools_near_postcode`
+Find schools within a radius of a UK postcode, sorted by distance. Uses Postcodes.io for geocoding and GIAS data for school locations.
 
-**Example:**
-> "What's the Ofsted rating for URN 109825?"
-
-### `find_schools_in_catchment`
-Find schools within a specified distance of a postcode.
-
-**Example:**
-> "Find all primary schools within 2km of MK9 3BZ"
+**Example:** "Find all primary schools within 2km of MK9 3BZ"
 
 ### `compare_schools`
-Compare multiple schools side-by-side.
+Compare multiple schools side-by-side by URN.
 
-**Example:**
-> "Compare schools with URNs 109825, 110234, and 110567"
+**Example:** "Compare schools with URNs 109825, 110234, and 110567"
+
+### `search_education_statistics`
+Search the DfE Explore Education Statistics catalogue for publications on school performance, absence, exclusions, applications & offers, workforce, etc.
+
+**Example:** "Search for publications about school absence"
+
+### `get_publication_datasets`
+List available datasets for a DfE publication (use after `search_education_statistics`).
 
 ## Development
 
 ### Setup
 
 ```bash
-# Clone repo
 git clone https://github.com/yourusername/uk-schools-mcp.git
 cd uk-schools-mcp
-
-# Install dependencies
 uv sync --all-extras
-
-# Run tests
 uv run pytest
-
-# Lint
 uv run ruff check src/ tests/
 ```
 
@@ -123,51 +107,38 @@ uv run ruff check src/ tests/
 uk-schools-mcp/
 ├── src/
 │   └── uk_schools_mcp/
-│       ├── server.py        # Main MCP server
-│       ├── tools.py         # Tool definitions
+│       ├── server.py           # MCP server + tool handlers
 │       └── clients/
-│           ├── gias.py      # GIAS API client
-│           ├── ofsted.py    # Ofsted API client
-│           └── dfe.py       # DfE API client
+│           ├── gias.py         # GIAS bulk CSV client
+│           ├── postcodes.py    # Postcodes.io geocoding client
+│           ├── ees.py          # Explore Education Statistics API client
+│           └── ofsted.py       # Ofsted report URL helper
 ├── tests/
 │   └── test_server.py
-└── examples/
-    └── claude_desktop_config.json
+├── NEXT_STEPS.md               # Roadmap for additional data sources
+└── pyproject.toml
 ```
 
-## Data Sources
+### How GIAS Data Works
 
-The server fetches data directly from official government APIs:
-
-```python
-# GIAS establishment data
-gias_url = "https://www.get-information-schools.service.gov.uk/Establishments/Establishment/DownloadEstablishments"
-
-# Ofsted data
-ofsted_url = "https://files.ofsted.gov.uk/downloads/data/management_information_-_state-funded_schools_latest.csv"
-
-# DfE Explore Education Statistics
-dfe_api = "https://api.education.gov.uk/statistics/v1"
+On first use, the server downloads the daily GIAS bulk CSV (~65k schools, ~30MB) from:
 ```
+https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata{YYYYMMDD}.csv
+```
+
+The CSV is cached locally at `~/.cache/uk-schools-mcp/` and refreshed daily. All search and lookup operations run against this cached data using polars for fast filtering.
 
 ## Contributing
 
-Contributions welcome! This MCP server helps parents, educators, and researchers access UK school data through AI assistants.
+Contributions welcome! See [NEXT_STEPS.md](NEXT_STEPS.md) for planned enhancements.
 
 ## License
 
-MIT License - See LICENSE file for details
-
-## Resources
-
-- [Model Context Protocol Documentation](https://modelcontextprotocol.io/docs)
-- [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk)
-- [UK Schools MCP Server on MCP Registry](https://registry.modelcontextprotocol.io) (coming soon!)
-- [Official MCP Servers List](https://github.com/modelcontextprotocol/servers)
+MIT License - See LICENSE file for details.
 
 ## Acknowledgments
 
 Built with data from:
-- Department for Education (DfE)
-- Office for Standards in Education (Ofsted)
-- Get Information About Schools (GIAS)
+- Department for Education (DfE) - GIAS and Explore Education Statistics
+- Office for Standards in Education (Ofsted) - Inspection reports
+- [Postcodes.io](https://postcodes.io/) - Open-source UK postcode geocoding
