@@ -1,30 +1,39 @@
-"""
-UK Schools MCP Server - Starter Template
+"""UK Schools MCP Server - Provides UK school data to AI assistants.
 
-This is a starter template for building an MCP server that provides access to
-UK school data from GIAS, Ofsted, and DfE APIs.
+This MCP server connects to the school-finder API and provides tools for:
+- Searching schools
+- Getting school details
+- Finding schools in catchment areas
+- Comparing schools
+- Getting Ofsted ratings
 
 Based on: https://github.com/modelcontextprotocol/python-sdk
 """
 
 import asyncio
+import json
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
 
-# Optional: Import your school-finder logic
-# You can either:
-# 1. Make HTTP requests to your deployed school-finder API
-# 2. Import and reuse your existing Python modules
-# 3. Create new API clients for GIAS/Ofsted/DfE
-
-import httpx
+from uk_schools_mcp.clients.school_finder import SchoolFinderClient
 
 
 # Initialize MCP server
 app = Server("uk-schools")
+
+# Initialize API client (will be created on first use)
+_client: SchoolFinderClient | None = None
+
+
+def get_client() -> SchoolFinderClient:
+    """Get or create the SchoolFinderClient instance."""
+    global _client
+    if _client is None:
+        _client = SchoolFinderClient()
+    return _client
 
 
 @app.list_tools()
@@ -66,7 +75,6 @@ async def list_tools() -> list[Tool]:
                         "default": 10,
                     },
                 },
-                "required": ["query"],
             },
         ),
         Tool(
@@ -79,30 +87,12 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "urn": {
-                        "type": "string",
-                        "description": "Unique Reference Number (URN) of the school",
-                    },
-                    "school_name": {
-                        "type": "string",
-                        "description": "Exact name of the school (alternative to URN)",
+                    "school_id": {
+                        "type": "integer",
+                        "description": "Database ID of the school",
                     },
                 },
-            },
-        ),
-        Tool(
-            name="get_ofsted_rating",
-            description=(
-                "Get current Ofsted rating and inspection history for a school. "
-                "Includes rating trajectory (improving/stable/declining), inspection dates, "
-                "key findings, and links to full reports."
-            ),
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "urn": {"type": "string", "description": "School URN"},
-                },
-                "required": ["urn"],
+                "required": ["school_id"],
             },
         ),
         Tool(
@@ -141,15 +131,15 @@ async def list_tools() -> list[Tool]:
             inputSchema={
                 "type": "object",
                 "properties": {
-                    "urns": {
+                    "school_ids": {
                         "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of school URNs to compare (2-4 schools)",
+                        "items": {"type": "integer"},
+                        "description": "List of school IDs to compare (2-4 schools)",
                         "minItems": 2,
                         "maxItems": 4,
                     },
                 },
-                "required": ["urns"],
+                "required": ["school_ids"],
             },
         ),
     ]
@@ -158,69 +148,116 @@ async def list_tools() -> list[Tool]:
 @app.call_tool()
 async def call_tool(name: str, arguments: Any) -> list[TextContent]:
     """Handle tool calls from the MCP client."""
+    client = get_client()
 
-    if name == "search_schools":
-        # Example: Call your school-finder API or GIAS API
-        query = arguments.get("query")
-        council = arguments.get("council")
-        limit = arguments.get("limit", 10)
+    try:
+        if name == "search_schools":
+            query = arguments.get("query")
+            council = arguments.get("council")
+            school_type = arguments.get("school_type")
+            limit = arguments.get("limit", 10)
 
-        # Option 1: Call your deployed school-finder API
-        # async with httpx.AsyncClient() as client:
-        #     response = await client.get(
-        #         "https://school-finder.fly.dev/api/schools",
-        #         params={"council": council, "search": query, "limit": limit}
-        #     )
-        #     schools = response.json()
+            schools = await client.search_schools(
+                query=query,
+                council=council,
+                school_type=school_type,
+                limit=limit,
+            )
 
-        # Option 2: Call GIAS API directly
-        # schools = await fetch_gias_schools(query, council)
+            result = f"Found {len(schools)} schools"
+            if council:
+                result += f" in {council}"
+            if query:
+                result += f" matching '{query}'"
+            result += ":\n\n"
 
-        # For now, return example data
-        result = f"Searching for schools matching '{query}' in {council or 'all councils'}..."
-        result += f"\n\nFound {limit} schools (example data - connect to real API)"
+            for school in schools:
+                result += f"**{school['name']}** (ID: {school['id']})\n"
+                result += f"  Type: {school.get('type', 'N/A')}\n"
+                result += f"  Ofsted: {school.get('ofsted_rating', 'Not rated')}\n"
+                result += f"  Address: {school.get('address', 'N/A')}\n"
+                if school.get('distance_km'):
+                    result += f"  Distance: {school['distance_km']:.1f} km\n"
+                if school.get('website'):
+                    result += f"  Website: {school['website']}\n"
+                result += "\n"
 
-        return [TextContent(type="text", text=result)]
+            return [TextContent(type="text", text=result)]
 
-    elif name == "get_school_details":
-        urn = arguments.get("urn")
-        school_name = arguments.get("school_name")
+        elif name == "get_school_details":
+            school_id = arguments["school_id"]
+            school = await client.get_school_by_id(school_id)
 
-        # Fetch school details from your API or GIAS
-        result = f"Fetching details for school URN: {urn or school_name}..."
-        result += "\n\n(Connect to school-finder API or GIAS API)"
+            result = f"# {school['name']}\n\n"
+            result += f"**Type:** {school.get('type', 'N/A')}\n"
+            result += f"**Ofsted Rating:** {school.get('ofsted_rating', 'Not rated')}\n"
+            result += f"**Phase:** {school.get('phase', 'N/A')}\n"
+            result += f"**Age Range:** {school.get('age_range_from', 'N/A')} - {school.get('age_range_to', 'N/A')}\n"
+            result += f"**Address:** {school.get('address', 'N/A')}, {school.get('postcode', 'N/A')}\n\n"
 
-        return [TextContent(type="text", text=result)]
+            if school.get('ethos'):
+                result += f"**Ethos:** {school['ethos']}\n\n"
 
-    elif name == "get_ofsted_rating":
-        urn = arguments["urn"]
+            if school.get('clubs'):
+                result += f"**Clubs:** {len(school['clubs'])} available\n"
+                for club in school['clubs'][:5]:  # Show first 5
+                    result += f"  - {club['name']} ({club['club_type']})\n"
 
-        # Fetch Ofsted data
-        result = f"Fetching Ofsted rating for URN: {urn}..."
-        result += "\n\n(Connect to Ofsted API or your school-finder API)"
+            if school.get('website'):
+                result += f"\n**Website:** {school['website']}\n"
 
-        return [TextContent(type="text", text=result)]
+            return [TextContent(type="text", text=result)]
 
-    elif name == "find_schools_in_catchment":
-        postcode = arguments["postcode"]
-        radius_km = arguments.get("radius_km", 3)
+        elif name == "find_schools_in_catchment":
+            postcode = arguments["postcode"]
+            radius_km = arguments.get("radius_km", 3)
+            school_type = arguments.get("school_type")
 
-        # Geocode postcode and find nearby schools
-        result = f"Finding schools within {radius_km}km of {postcode}..."
-        result += "\n\n(Implement postcodes.io geocoding + distance search)"
+            # First geocode the postcode
+            location = await client.geocode_postcode(postcode)
+            lat, lng = location['latitude'], location['longitude']
 
-        return [TextContent(type="text", text=result)]
+            # Find schools in catchment
+            schools = await client.find_schools_in_catchment(
+                lat=lat,
+                lng=lng,
+                radius_km=radius_km,
+                school_type=school_type,
+            )
 
-    elif name == "compare_schools":
-        urns = arguments["urns"]
+            result = f"Found {len(schools)} schools within {radius_km}km of {postcode}:\n\n"
 
-        result = f"Comparing {len(urns)} schools: {', '.join(urns)}..."
-        result += "\n\n(Fetch and format comparison data)"
+            for school in schools[:15]:  # Show top 15
+                result += f"**{school['name']}** ({school['distance_km']:.1f} km)\n"
+                result += f"  Ofsted: {school.get('ofsted_rating', 'Not rated')}\n"
+                result += f"  Type: {school.get('type', 'N/A')}\n"
+                result += f"  ID: {school['id']}\n\n"
 
-        return [TextContent(type="text", text=result)]
+            return [TextContent(type="text", text=result)]
 
-    else:
-        raise ValueError(f"Unknown tool: {name}")
+        elif name == "compare_schools":
+            school_ids = arguments["school_ids"]
+            comparison = await client.compare_schools(school_ids)
+
+            result = f"# School Comparison ({len(comparison['schools'])} schools)\n\n"
+
+            for school in comparison['schools']:
+                result += f"## {school['name']}\n"
+                result += f"- **Ofsted:** {school.get('ofsted_rating', 'N/A')}\n"
+                result += f"- **Type:** {school.get('type', 'N/A')}\n"
+                result += f"- **Address:** {school.get('address', 'N/A')}\n"
+                if school.get('clubs'):
+                    result += f"- **Clubs:** {len(school['clubs'])}\n"
+                result += "\n"
+
+            return [TextContent(type="text", text=result)]
+
+        else:
+            raise ValueError(f"Unknown tool: {name}")
+
+    except Exception as e:
+        error_msg = f"Error calling {name}: {str(e)}"
+        return [TextContent(type="text", text=error_msg)]
 
 
 async def main():
