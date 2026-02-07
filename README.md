@@ -8,8 +8,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that provides
 - Get detailed school information (type, phase, age range, capacity, contact details)
 - Find schools near a postcode with distance sorting (Postcodes.io geocoding)
 - Compare schools side-by-side
-- Browse DfE education statistics (performance, absence, exclusions, admissions)
-- Query DfE datasets with filters for school-level absence, exclusions, workforce, and performance data
+- Browse and query 23+ DfE education datasets (absence, exclusions, performance, SEND, admissions, workforce, funding, destinations, and more)
+- One-step dataset discovery: find the right dataset for any education topic
 - Get Ofsted inspection grades and judgements from Management Information data
 - Links to Ofsted inspection reports
 
@@ -105,6 +105,16 @@ Query a DfE Explore Education Statistics dataset with specific indicators, filte
 Get Ofsted inspection ratings and grades for a school by URN. Returns overall effectiveness grade and grades for each inspection area (Quality of Education, Behaviour and Attitudes, Personal Development, Leadership and Management), plus inspection dates, type, and previous grades.
 
 **Example:** "Get Ofsted ratings for URN 109825"
+
+### `list_ees_topics`
+List all 23 available education data topics from the DfE Explore Education Statistics API, organized by category (performance, welfare, demographics, admissions, workforce, finance, destinations, early years).
+
+### `discover_dataset`
+Automatically find the publications and datasets for a given education topic. Replaces the manual 4-step workflow with a single call. Returns dataset IDs ready for use with `get_dataset_metadata` and `query_dataset`.
+
+**Example:** "Discover datasets for topic 'absence'" or "Find SEND data"
+
+**Available topics:** `absence`, `exclusions`, `ks2_performance`, `gcse_performance`, `a_level_performance`, `applications_offers`, `workforce`, `sen`, `school_pupils_characteristics`, `free_school_meals`, `school_capacity`, `admission_appeals`, `destinations`, `children_looked_after`, `children_in_need`, `mat_performance`, `school_funding`, `la_school_expenditure`, `further_education`, `early_years`, `early_years_foundation`, `neet`, `elective_home_education`
 
 ## Development
 
