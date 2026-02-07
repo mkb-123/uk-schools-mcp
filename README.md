@@ -9,6 +9,8 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that provides
 - Find schools near a postcode with distance sorting (Postcodes.io geocoding)
 - Compare schools side-by-side
 - Browse DfE education statistics (performance, absence, exclusions, admissions)
+- Query DfE datasets with filters for school-level absence, exclusions, workforce, and performance data
+- Get Ofsted inspection grades and judgements from Management Information data
 - Links to Ofsted inspection reports
 
 ## Data Sources
@@ -18,7 +20,7 @@ A [Model Context Protocol](https://modelcontextprotocol.io) server that provides
 | [GIAS](https://get-information-schools.service.gov.uk/) | Bulk CSV (daily) | None | All ~65k schools: name, URN, type, phase, address, capacity, pupils, head teacher, SEN, etc. |
 | [Postcodes.io](https://postcodes.io/) | REST JSON API | None | UK postcode geocoding (lat/lng) for catchment area searches |
 | [Explore Education Statistics](https://explore-education-statistics.service.gov.uk/) | REST JSON API | None | DfE publications: performance tables, absence, exclusions, applications & offers, workforce |
-| [Ofsted](https://reports.ofsted.gov.uk/) | Report links | None | Inspection report URLs generated from URN |
+| [Ofsted](https://reports.ofsted.gov.uk/) | Monthly Excel + report links | None | Inspection grades, judgement areas, dates, and report URLs |
 
 ## Installation
 
@@ -34,7 +36,7 @@ uv run python -m uk_schools_mcp.server
 ### Using pip
 
 ```bash
-pip install mcp httpx polars pydantic
+pip install mcp httpx polars pydantic openpyxl
 ```
 
 ## Usage with Claude Desktop
@@ -88,6 +90,21 @@ Search the DfE Explore Education Statistics catalogue for publications on school
 
 ### `get_publication_datasets`
 List available datasets for a DfE publication (use after `search_education_statistics`).
+
+### `get_dataset_metadata`
+Get available filters, indicators, geographic levels, and time periods for a DfE dataset. Essential before querying to discover what data is available and what IDs to use.
+
+**Example:** "What filters and indicators are available for dataset ds-123?"
+
+### `query_dataset`
+Query a DfE Explore Education Statistics dataset with specific indicators, filters, time periods, and geographic levels. Enables access to school-level data on absence, exclusions, performance, admissions, workforce, and more.
+
+**Example:** "Query the absence dataset for 2023 academic year at national level"
+
+### `get_ofsted_ratings`
+Get Ofsted inspection ratings and grades for a school by URN. Returns overall effectiveness grade and grades for each inspection area (Quality of Education, Behaviour and Attitudes, Personal Development, Leadership and Management), plus inspection dates, type, and previous grades.
+
+**Example:** "Get Ofsted ratings for URN 109825"
 
 ## Development
 
