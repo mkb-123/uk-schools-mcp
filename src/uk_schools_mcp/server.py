@@ -6,6 +6,9 @@ This MCP server provides tools for:
 - Finding schools near a postcode (GIAS + Postcodes.io)
 - Comparing schools side-by-side
 - Browsing DfE education statistics (Explore Education Statistics API)
+- Querying EES datasets with filters for absence, exclusions, performance, etc.
+- Getting Ofsted inspection grades and judgements
+- Links to Ofsted inspection reports
 
 Data is sourced from official government APIs (GIAS, Ofsted, DfE).
 
@@ -31,6 +34,7 @@ app = Server("uk-schools")
 _gias: GIASClient | None = None
 _postcodes: PostcodesClient | None = None
 _ees: EESClient | None = None
+_ofsted: OfstedClient | None = None
 
 
 def get_gias() -> GIASClient:
@@ -52,6 +56,13 @@ def get_ees() -> EESClient:
     if _ees is None:
         _ees = EESClient()
     return _ees
+
+
+def get_ofsted() -> OfstedClient:
+    global _ofsted
+    if _ofsted is None:
+        _ofsted = OfstedClient()
+    return _ofsted
 
 
 def _format_school_summary(school: dict[str, Any]) -> str:
@@ -194,7 +205,8 @@ async def list_tools() -> list[Tool]:
                 "Search the DfE Explore Education Statistics catalogue for "
                 "publications on topics like school performance, absence, "
                 "exclusions, applications and offers, workforce, and more. "
-                "Returns publication IDs that can be used to query specific datasets."
+                "Returns publication IDs that can be used with get_publication_datasets "
+                "and then get_dataset_metadata/query_dataset to access the actual data."
             ),
             inputSchema={
                 "type": "object",
@@ -216,7 +228,8 @@ async def list_tools() -> list[Tool]:
             description=(
                 "List the available datasets for a DfE Explore Education Statistics "
                 "publication. Use after search_education_statistics to find "
-                "specific data sets to query."
+                "specific data sets, then use get_dataset_metadata to explore "
+                "available filters and indicators before querying."
             ),
             inputSchema={
                 "type": "object",
@@ -227,6 +240,110 @@ async def list_tools() -> list[Tool]:
                     },
                 },
                 "required": ["publication_id"],
+            },
+        ),
+        Tool(
+            name="get_dataset_metadata",
+            description=(
+                "Get the available filters, indicators, geographic levels, locations, "
+                "and time periods for a DfE dataset. Use this to discover what data "
+                "is available and what filter/indicator IDs to use with query_dataset. "
+                "This is essential before querying - it tells you what indicators "
+                "(e.g. absence rate, number of exclusions) and filters (e.g. school type, "
+                "gender) are available, along with their IDs."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "dataset_id": {
+                        "type": "string",
+                        "description": "Dataset ID from get_publication_datasets",
+                    },
+                },
+                "required": ["dataset_id"],
+            },
+        ),
+        Tool(
+            name="query_dataset",
+            description=(
+                "Query a DfE Explore Education Statistics dataset with specific "
+                "indicators and filters. Use get_dataset_metadata first to discover "
+                "available indicator and filter IDs. This tool enables access to "
+                "school-level data on absence, exclusions, performance, admissions, "
+                "workforce, and more. "
+                "Time periods use format 'YYYY|CODE' where CODE is: "
+                "AY (academic year), CY (calendar year), FY (financial year), etc. "
+                "Geographic levels include: NAT (national), REG (regional), "
+                "LA (local authority), SCH (school). "
+                "Locations use format 'LEVEL|id_type|id_value' e.g. 'LA|code|823'."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "dataset_id": {
+                        "type": "string",
+                        "description": "Dataset ID from get_publication_datasets",
+                    },
+                    "indicators": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "List of indicator IDs to retrieve (from get_dataset_metadata)",
+                    },
+                    "time_periods": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Time periods in 'YYYY|CODE' format, e.g. ['2023|AY']",
+                    },
+                    "geographic_levels": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Geographic levels: NAT, REG, LA, SCH, etc.",
+                    },
+                    "locations": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Locations in 'LEVEL|id_type|id_value' format",
+                    },
+                    "filters": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Filter option IDs (from get_dataset_metadata)",
+                    },
+                    "page": {
+                        "type": "integer",
+                        "description": "Page number (default: 1)",
+                        "default": 1,
+                    },
+                    "page_size": {
+                        "type": "integer",
+                        "description": "Results per page (default: 100, max: 1000)",
+                        "default": 100,
+                    },
+                },
+                "required": ["dataset_id", "indicators"],
+            },
+        ),
+        Tool(
+            name="get_ofsted_ratings",
+            description=(
+                "Get Ofsted inspection ratings and grades for a school by URN. "
+                "Returns the overall effectiveness grade (Outstanding/Good/"
+                "Requires Improvement/Inadequate) along with grades for each "
+                "inspection area: Quality of Education, Behaviour and Attitudes, "
+                "Personal Development, Leadership and Management, and where "
+                "applicable Early Years and Sixth Form provision. "
+                "Also includes inspection dates, type, and previous grades. "
+                "Data comes from Ofsted Management Information files published monthly."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "urn": {
+                        "type": "integer",
+                        "description": "The school's URN (Unique Reference Number)",
+                    },
+                },
+                "required": ["urn"],
             },
         ),
     ]
@@ -248,6 +365,12 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             return await _handle_search_education_statistics(arguments)
         elif name == "get_publication_datasets":
             return await _handle_get_publication_datasets(arguments)
+        elif name == "get_dataset_metadata":
+            return await _handle_get_dataset_metadata(arguments)
+        elif name == "query_dataset":
+            return await _handle_query_dataset(arguments)
+        elif name == "get_ofsted_ratings":
+            return await _handle_get_ofsted_ratings(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
@@ -363,6 +486,7 @@ async def _handle_get_school_details(arguments: Any) -> list[TextContent]:
     # Links
     result += f"\n**GIAS Page:** {school.get('gias_url', '')}\n"
 
+    result += "\nUse get_ofsted_ratings for detailed inspection grades."
     return [TextContent(type="text", text=result)]
 
 
@@ -483,6 +607,241 @@ async def _handle_get_publication_datasets(arguments: Any) -> list[TextContent]:
             ver = ds["latestVersion"]
             result += f"  Version: {ver.get('number', 'N/A')}, Published: {ver.get('published', 'N/A')}\n"
         result += "\n"
+
+    result += "Use get_dataset_metadata with a dataset ID to see available filters and indicators."
+    return [TextContent(type="text", text=result)]
+
+
+async def _handle_get_dataset_metadata(arguments: Any) -> list[TextContent]:
+    dataset_id = arguments["dataset_id"]
+    ees = get_ees()
+    meta = await ees.get_data_set_meta(dataset_id)
+
+    result = f"# Dataset Metadata: `{dataset_id}`\n\n"
+
+    # Filters
+    filters = meta.get("filters", [])
+    if filters:
+        result += f"## Filters ({len(filters)})\n\n"
+        for f in filters:
+            result += f"**{f.get('label', f.get('id', 'Unknown'))}** (column: `{f.get('column', 'N/A')}`)\n"
+            options = f.get("options", [])
+            if options:
+                # Show up to 20 options
+                shown = options[:20]
+                for opt in shown:
+                    result += f"  - `{opt.get('id', '')}`: {opt.get('label', 'N/A')}\n"
+                if len(options) > 20:
+                    result += f"  - ... and {len(options) - 20} more options\n"
+            result += "\n"
+
+    # Indicators
+    indicators = meta.get("indicators", [])
+    if indicators:
+        result += f"## Indicators ({len(indicators)})\n\n"
+        for ind in indicators:
+            unit = ind.get("unit", "")
+            unit_str = f" ({unit})" if unit else ""
+            result += f"- `{ind.get('id', '')}`: {ind.get('label', 'N/A')}{unit_str}\n"
+        result += "\n"
+
+    # Geographic levels
+    geo_levels = meta.get("geographicLevels", [])
+    if geo_levels:
+        result += "## Geographic Levels\n\n"
+        for gl in geo_levels:
+            result += f"- {gl}\n"
+        result += "\n"
+
+    # Time periods
+    time_periods = meta.get("timePeriods", [])
+    if time_periods:
+        result += f"## Time Periods ({len(time_periods)})\n\n"
+        shown = time_periods[:20]
+        for tp in shown:
+            code = tp.get("code", "")
+            period = tp.get("period", "")
+            result += f"- `{period}|{code}`\n"
+        if len(time_periods) > 20:
+            result += f"- ... and {len(time_periods) - 20} more periods\n"
+        result += "\n"
+
+    # Locations
+    locations = meta.get("locations", [])
+    if locations:
+        result += f"## Locations ({len(locations)})\n\n"
+        shown = locations[:30]
+        for loc in shown:
+            level = loc.get("level", "")
+            label = loc.get("label", "N/A")
+            loc_id = loc.get("id", loc.get("code", ""))
+            result += f"- `{level}|id|{loc_id}`: {label}\n"
+        if len(locations) > 30:
+            result += f"- ... and {len(locations) - 30} more locations\n"
+        result += "\n"
+
+    result += "Use query_dataset with indicator IDs and optional filters/time_periods to retrieve data."
+    return [TextContent(type="text", text=result)]
+
+
+async def _handle_query_dataset(arguments: Any) -> list[TextContent]:
+    dataset_id = arguments["dataset_id"]
+    indicators = arguments["indicators"]
+    time_periods = arguments.get("time_periods")
+    geographic_levels = arguments.get("geographic_levels")
+    locations = arguments.get("locations")
+    filters = arguments.get("filters")
+    page = arguments.get("page", 1)
+    page_size = min(arguments.get("page_size", 100), 1000)
+
+    ees = get_ees()
+    data = await ees.query_data_set(
+        data_set_id=dataset_id,
+        indicators=indicators,
+        time_periods=time_periods,
+        geographic_levels=geographic_levels,
+        locations=locations,
+        filters=filters,
+        page=page,
+        page_size=page_size,
+    )
+
+    results = data.get("results", [])
+    paging = data.get("paging", {})
+    total = paging.get("totalResults", len(results))
+
+    if not results:
+        return [TextContent(type="text", text="No data returned for this query. Try broadening your filters.")]
+
+    result = f"# Query Results (showing {len(results)} of {total} total)\n\n"
+
+    for row in results:
+        # Build a readable representation of each data row
+        time_period = row.get("timePeriod", {})
+        period_str = f"{time_period.get('period', 'N/A')} ({time_period.get('code', '')})"
+
+        geo = row.get("geographicLevel", "")
+        location_info = ""
+        for loc_key in ["school", "localAuthority", "region", "country"]:
+            loc = row.get("locations", {}).get(loc_key)
+            if loc:
+                location_info = loc.get("name", loc.get("label", str(loc)))
+                break
+
+        result += f"**{period_str}** | {geo}"
+        if location_info:
+            result += f" | {location_info}"
+        result += "\n"
+
+        # Show filter values
+        filter_items = row.get("filters", {})
+        if filter_items:
+            filter_strs = []
+            for fk, fv in filter_items.items():
+                if isinstance(fv, dict):
+                    filter_strs.append(f"{fk}: {fv.get('label', fv.get('id', str(fv)))}")
+                else:
+                    filter_strs.append(f"{fk}: {fv}")
+            if filter_strs:
+                result += f"  Filters: {', '.join(filter_strs)}\n"
+
+        # Show indicator values
+        values = row.get("values", {})
+        if values:
+            for ind_id, val in values.items():
+                result += f"  {ind_id}: {val}\n"
+        result += "\n"
+
+    # Pagination info
+    if total > len(results):
+        total_pages = paging.get("totalPages", 1)
+        result += f"Page {page} of {total_pages}. Use page parameter to see more results.\n"
+
+    return [TextContent(type="text", text=result)]
+
+
+async def _handle_get_ofsted_ratings(arguments: Any) -> list[TextContent]:
+    urn = arguments["urn"]
+    ofsted = get_ofsted()
+    inspection = await ofsted.get_inspection(urn)
+
+    if inspection is None:
+        return [TextContent(
+            type="text",
+            text=(
+                f"No Ofsted inspection data found for URN {urn}.\n"
+                f"This could mean the school hasn't been inspected yet, "
+                f"or it may not be in the Ofsted MI dataset (e.g. independent schools).\n"
+                f"Check the Ofsted report page: {OfstedClient.ofsted_report_url(urn)}"
+            ),
+        )]
+
+    school_name = inspection.get("school_name", f"URN {urn}")
+    result = f"# Ofsted Inspection: {school_name}\n\n"
+
+    # Current grades
+    result += "## Current Grades\n\n"
+    grade_display = [
+        ("overall_effectiveness", "Overall Effectiveness"),
+        ("quality_of_education", "Quality of Education"),
+        ("behaviour_and_attitudes", "Behaviour and Attitudes"),
+        ("personal_development", "Personal Development"),
+        ("leadership_and_management", "Leadership and Management"),
+        ("early_years_provision", "Early Years Provision"),
+        ("sixth_form_provision", "Sixth Form Provision"),
+    ]
+
+    for field, label in grade_display:
+        text_val = inspection.get(f"{field}_text")
+        if text_val:
+            code = inspection.get(field, "")
+            result += f"**{label}:** {text_val} ({code})\n"
+
+    # Inspection details
+    result += "\n## Inspection Details\n\n"
+    if inspection.get("inspection_type"):
+        result += f"**Type:** {inspection['inspection_type']}\n"
+    if inspection.get("inspection_start_date"):
+        end = inspection.get("inspection_end_date", "")
+        date_str = inspection["inspection_start_date"]
+        if end and end != date_str:
+            date_str += f" to {end}"
+        result += f"**Date:** {date_str}\n"
+    if inspection.get("publication_date"):
+        result += f"**Published:** {inspection['publication_date']}\n"
+    if inspection.get("ofsted_phase"):
+        result += f"**Ofsted Phase:** {inspection['ofsted_phase']}\n"
+    if inspection.get("category_of_concern"):
+        result += f"**Category of Concern:** {inspection['category_of_concern']}\n"
+
+    # Previous grades
+    has_previous = any(
+        inspection.get(f"previous_{f}_text")
+        for f in ["overall_effectiveness", "quality_of_education", "behaviour_and_attitudes",
+                   "personal_development", "leadership_and_management"]
+    )
+    if has_previous:
+        result += "\n## Previous Inspection Grades\n\n"
+        prev_display = [
+            ("previous_overall_effectiveness", "Overall Effectiveness"),
+            ("previous_quality_of_education", "Quality of Education"),
+            ("previous_behaviour_and_attitudes", "Behaviour and Attitudes"),
+            ("previous_personal_development", "Personal Development"),
+            ("previous_leadership_and_management", "Leadership and Management"),
+        ]
+        for field, label in prev_display:
+            text_val = inspection.get(f"{field}_text")
+            if text_val:
+                code = inspection.get(field, "")
+                result += f"**{label}:** {text_val} ({code})\n"
+
+        if inspection.get("previous_inspection_start_date"):
+            result += f"**Previous Inspection Date:** {inspection['previous_inspection_start_date']}\n"
+        if inspection.get("number_of_previous_inspections"):
+            result += f"**Number of Previous Inspections:** {inspection['number_of_previous_inspections']}\n"
+
+    # Links
+    result += f"\n**Full Report:** {inspection.get('report_url', OfstedClient.ofsted_report_url(urn))}\n"
 
     return [TextContent(type="text", text=result)]
 

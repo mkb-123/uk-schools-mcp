@@ -15,6 +15,7 @@ dependencies = [
     "httpx>=0.27.0",
     "polars>=1.0.0",  # For data processing
     "pydantic>=2.0.0",  # For data validation
+    "openpyxl>=3.1.0",  # For reading Ofsted MI Excel files
 ]
 
 [project.optional-dependencies]
