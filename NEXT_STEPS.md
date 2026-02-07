@@ -35,49 +35,56 @@ This document outlines data sources that could enhance the UK Schools MCP server
 - **Enables:** School-level data on absence, exclusions, performance, applications & offers, workforce, and more
 - **Notes:** Works with the existing EES client. The workflow is: search_education_statistics → get_publication_datasets → get_dataset_metadata → query_dataset
 
+### 6. EES Topic Discovery - DONE
+- **Tools:** `list_ees_topics` + `discover_dataset`
+- **Provides:** Registry of 23 education data topics with one-step dataset discovery
+- **Topics:** absence, exclusions, KS2/KS4/KS5 performance, SEND, school characteristics, FSM, school capacity, admission appeals, destinations, children looked after/in need, MAT performance, school funding, LA expenditure, FE/skills, early years, NEET, elective home education
+- **Notes:** Replaces the manual 4-step workflow with a single `discover_dataset` call that auto-finds the right publication and lists available datasets with IDs
+
 ---
 
-## Now Accessible via `query_dataset`
+## Now Accessible via `discover_dataset` + `query_dataset`
 
-The following data sources are now queryable via the `get_dataset_metadata` and `query_dataset` tools. Use the workflow: `search_education_statistics` → `get_publication_datasets` → `get_dataset_metadata` → `query_dataset`.
+All 23 topics below are discoverable via `list_ees_topics` and `discover_dataset`, then queryable via `get_dataset_metadata` + `query_dataset`.
 
-### 6. School Performance Data (KS2/KS4/KS5)
-Available through EES API. Search for publications on "KS2 results", "GCSE results", or "A-level results".
+### School Performance
+- **`ks2_performance`** - KS2 SATs: reading, writing, maths scores, expected/higher standard %
+- **`gcse_performance`** - GCSEs: Attainment 8, Progress 8, EBacc, Grade 5+ English & maths
+- **`a_level_performance`** - A-levels: average point score, A*-B %, value added
+- **`mat_performance`** - Multi-academy trust KS2/KS4/KS5 performance measures
 
-**Data available:**
-- KS2: Reading, writing, maths scores; expected standard %; higher standard %
-- KS4 (GCSE): Attainment 8, Progress 8, EBacc entry/achievement, Grade 5+ in English & maths
-- KS5 (A-level): Average point score, A*-B %, value added
+### Pupil Welfare
+- **`absence`** - Overall/persistent absence rates, authorised vs unauthorised, by reason
+- **`exclusions`** - Permanent exclusion and suspension rates, by reason/ethnicity/SEN/FSM
+- **`children_looked_after`** - Children in care numbers, placements, outcomes
+- **`children_in_need`** - Educational outcomes for CIN/CLA (KS2, KS4, absence, exclusions)
 
-### 7. School Applications & Offers (Admissions)
-Available through EES API. Search for "applications and offers".
+### Pupil Demographics
+- **`school_pupils_characteristics`** - Per-school pupil headcount by demographics, class sizes
+- **`sen`** - SEND: EHC plans, SEN support, type of need, demographics
+- **`free_school_meals`** - FSM eligibility rates at school/LA/national level
 
-**Data available:**
-- Number of first, second, third preferences by school
-- Number of offers made by preference rank
-- Historical data back to 2014
+### Admissions & Capacity
+- **`applications_offers`** - Preference applications, offers by rank, historical data
+- **`admission_appeals`** - Appeals lodged, heard, upheld by LA and phase
+- **`school_capacity`** - School capacity, pupil forecasts, planned place changes
 
-### 8. Pupil Absence Data
-Available through EES API. Search for "pupil absence".
+### Workforce & Finance
+- **`workforce`** - Teacher numbers, pupil-teacher ratios, turnover, vacancies, pay
+- **`school_funding`** - Per-pupil funding: DSG, pupil premium, UIFSM
+- **`la_school_expenditure`** - LA-maintained school income/expenditure (CFR)
 
-**Data available:**
-- Overall absence rate, persistent absence rate
-- Authorised vs unauthorised absence
-- Breakdown by reason
+### Post-16 & Destinations
+- **`destinations`** - 16-18 progression to HE, apprenticeships, employment
+- **`neet`** - Young people not in education, employment or training
+- **`further_education`** - FE learner numbers, apprenticeships, adult skills
 
-### 9. Exclusions Data
-Available through EES API. Search for "exclusions and suspensions".
+### Early Years
+- **`early_years`** - Childcare provider numbers, types, costs, workforce
+- **`early_years_foundation`** - Reception year assessment outcomes (EYFSP)
 
-**Data available:**
-- Permanent exclusion rate, suspension rate
-- Breakdown by reason, ethnicity, SEN status, FSM eligibility
-
-### 10. School Workforce Data
-Available through EES API. Search for "school workforce".
-
-**Data available:**
-- Teacher numbers, pupil-teacher ratios
-- Teacher qualifications, turnover, vacancy rates
+### Other
+- **`elective_home_education`** - Children registered for EHE by LA
 
 ---
 
@@ -109,11 +116,8 @@ PAN data is **not included in GIAS** and is fragmented across 150+ local authori
 | Postcodes.io | Done | Used by `find_schools_near_postcode` |
 | EES (publication browse) | Done | `search_education_statistics`, `get_publication_datasets` |
 | EES (dataset querying) | Done | `get_dataset_metadata`, `query_dataset` |
+| EES (topic discovery) | Done | `list_ees_topics`, `discover_dataset` (23 topics) |
 | Ofsted inspection grades | Done | `get_ofsted_ratings` |
-| Performance (KS2/KS4/KS5) | Accessible | Via `query_dataset` with EES |
-| Applications & offers | Accessible | Via `query_dataset` with EES |
-| Absence data | Accessible | Via `query_dataset` with EES |
-| Exclusions data | Accessible | Via `query_dataset` with EES |
-| Workforce data | Accessible | Via `query_dataset` with EES |
+| 23 EES datasets | Accessible | Via `discover_dataset` + `query_dataset` |
 | Financial benchmarking | Not feasible | No public API |
 | PAN data | Not feasible | Fragmented across 150+ LA websites |

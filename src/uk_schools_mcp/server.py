@@ -22,7 +22,7 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from uk_schools_mcp.clients.ees import EESClient
+from uk_schools_mcp.clients.ees import EES_TOPICS, EESClient
 from uk_schools_mcp.clients.gias import GIASClient
 from uk_schools_mcp.clients.ofsted import OfstedClient
 from uk_schools_mcp.clients.postcodes import PostcodesClient
@@ -346,6 +346,48 @@ async def list_tools() -> list[Tool]:
                 "required": ["urn"],
             },
         ),
+        Tool(
+            name="list_ees_topics",
+            description=(
+                "List all available education data topics from the DfE Explore "
+                "Education Statistics API. Shows topic keys, titles, and descriptions "
+                "for 23 datasets covering absence, exclusions, performance, SEND, "
+                "admissions, workforce, funding, destinations, and more. "
+                "Use the topic key with discover_dataset to find the actual "
+                "dataset IDs needed for querying."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {},
+            },
+        ),
+        Tool(
+            name="discover_dataset",
+            description=(
+                "Discover the publications and datasets available for a specific "
+                "education data topic. This replaces the manual 4-step workflow "
+                "(search_education_statistics -> get_publication_datasets -> "
+                "get_dataset_metadata -> query_dataset) by automatically finding "
+                "the right publication and listing its datasets with IDs. "
+                "Use list_ees_topics first to see available topic keys, then "
+                "use the dataset ID from the results with get_dataset_metadata "
+                "and query_dataset."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "topic": {
+                        "type": "string",
+                        "description": (
+                            "Topic key from list_ees_topics, e.g. 'absence', "
+                            "'exclusions', 'gcse_performance', 'sen', 'workforce', "
+                            "'applications_offers', 'school_funding', 'destinations'"
+                        ),
+                    },
+                },
+                "required": ["topic"],
+            },
+        ),
     ]
 
 
@@ -371,6 +413,10 @@ async def call_tool(name: str, arguments: Any) -> list[TextContent]:
             return await _handle_query_dataset(arguments)
         elif name == "get_ofsted_ratings":
             return await _handle_get_ofsted_ratings(arguments)
+        elif name == "list_ees_topics":
+            return await _handle_list_ees_topics(arguments)
+        elif name == "discover_dataset":
+            return await _handle_discover_dataset(arguments)
         else:
             raise ValueError(f"Unknown tool: {name}")
     except Exception as e:
@@ -843,6 +889,90 @@ async def _handle_get_ofsted_ratings(arguments: Any) -> list[TextContent]:
     # Links
     result += f"\n**Full Report:** {inspection.get('report_url', OfstedClient.ofsted_report_url(urn))}\n"
 
+    return [TextContent(type="text", text=result)]
+
+
+async def _handle_list_ees_topics(arguments: Any) -> list[TextContent]:
+    result = "# Available Education Data Topics\n\n"
+    result += (
+        "These topics are available from the DfE Explore Education Statistics API. "
+        "Use `discover_dataset` with a topic key to find the dataset IDs for querying.\n\n"
+    )
+
+    # Group by category
+    categories = {
+        "School Performance": ["ks2_performance", "gcse_performance", "a_level_performance", "mat_performance"],
+        "Pupil Welfare": ["absence", "exclusions", "children_looked_after", "children_in_need"],
+        "Pupil Demographics": ["school_pupils_characteristics", "sen", "free_school_meals"],
+        "Admissions & Capacity": ["applications_offers", "admission_appeals", "school_capacity"],
+        "Workforce": ["workforce"],
+        "Finance": ["school_funding", "la_school_expenditure"],
+        "Post-16 & Destinations": ["destinations", "neet", "further_education"],
+        "Early Years": ["early_years", "early_years_foundation"],
+        "Other": ["elective_home_education"],
+    }
+
+    for category, keys in categories.items():
+        result += f"## {category}\n\n"
+        for key in keys:
+            topic = EES_TOPICS.get(key)
+            if topic:
+                result += f"**`{key}`** - {topic['title']}\n"
+                result += f"  {topic['description']}\n\n"
+
+    result += (
+        "Use `discover_dataset(topic='<key>')` to find publication and dataset IDs, "
+        "then `get_dataset_metadata` and `query_dataset` to access the data."
+    )
+    return [TextContent(type="text", text=result)]
+
+
+async def _handle_discover_dataset(arguments: Any) -> list[TextContent]:
+    topic_key = arguments["topic"]
+    ees = get_ees()
+
+    try:
+        discovery = await ees.discover_topic_datasets(topic_key)
+    except ValueError as e:
+        return [TextContent(type="text", text=str(e))]
+
+    result = f"# {discovery['title']}\n\n"
+    result += f"{discovery['description']}\n\n"
+    result += f"Search term: \"{discovery['search_term']}\"\n\n"
+
+    pubs = discovery.get("publications", [])
+    if not pubs:
+        result += "No publications found for this topic. Try `search_education_statistics` with a custom query.\n"
+        return [TextContent(type="text", text=result)]
+
+    for pub in pubs:
+        result += f"## {pub['title']}\n"
+        result += f"Publication ID: `{pub['id']}`\n"
+        if pub.get("summary"):
+            result += f"{pub['summary'][:300]}\n"
+        result += "\n"
+
+        datasets = pub.get("datasets", [])
+        if datasets:
+            result += f"**Datasets ({len(datasets)}):**\n\n"
+            for ds in datasets:
+                result += f"- **{ds.get('title', 'Untitled')}**\n"
+                result += f"  Dataset ID: `{ds['id']}`\n"
+                if ds.get("summary"):
+                    result += f"  {ds['summary'][:200]}\n"
+                if ds.get("version"):
+                    result += f"  Version: {ds['version']}"
+                    if ds.get("published"):
+                        result += f", Published: {ds['published']}"
+                    result += "\n"
+                result += "\n"
+        else:
+            result += "No datasets found for this publication.\n\n"
+
+    result += (
+        "**Next steps:** Use `get_dataset_metadata(dataset_id='...')` with a dataset ID above "
+        "to see available indicators and filters, then `query_dataset` to retrieve data."
+    )
     return [TextContent(type="text", text=result)]
 
 

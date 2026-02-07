@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from uk_schools_mcp import server  # noqa: I001
+from uk_schools_mcp.clients.ees import EES_TOPICS
 from uk_schools_mcp.clients.ofsted import OfstedClient
 
 # --- Helper fixtures ---
@@ -76,7 +77,9 @@ async def test_list_tools_returns_all_tools():
     assert "get_dataset_metadata" in names
     assert "query_dataset" in names
     assert "get_ofsted_ratings" in names
-    assert len(tools) == 9
+    assert "list_ees_topics" in names
+    assert "discover_dataset" in names
+    assert len(tools) == 11
 
 
 # --- search_schools ---
@@ -545,3 +548,130 @@ class TestFormatSchoolSummary:
         text = server._format_school_summary(school)
         assert "London" in text
         assert "SW1A 1AA" in text
+
+
+# --- list_ees_topics ---
+
+
+async def test_list_ees_topics():
+    result = await server._handle_list_ees_topics({})
+    text = result[0].text
+    assert "Available Education Data Topics" in text
+    assert "absence" in text
+    assert "exclusions" in text
+    assert "gcse_performance" in text
+    assert "sen" in text
+    assert "workforce" in text
+    assert "school_funding" in text
+    assert "destinations" in text
+    assert "discover_dataset" in text
+    # Check categories
+    assert "School Performance" in text
+    assert "Pupil Welfare" in text
+    assert "Early Years" in text
+
+
+async def test_list_ees_topics_all_keys_present():
+    result = await server._handle_list_ees_topics({})
+    text = result[0].text
+    for key in EES_TOPICS:
+        assert key in text, f"Topic key '{key}' not found in output"
+
+
+# --- discover_dataset ---
+
+
+async def test_discover_dataset():
+    mock_ees = AsyncMock()
+    mock_ees.discover_topic_datasets.return_value = {
+        "topic_key": "absence",
+        "title": "Pupil Absence",
+        "description": "Overall and persistent absence rates...",
+        "search_term": "pupil absence in schools in England",
+        "publications": [
+            {
+                "id": "pub-abc",
+                "title": "Pupil absence in schools in England",
+                "summary": "Statistics on pupil absence...",
+                "datasets": [
+                    {
+                        "id": "ds-xyz",
+                        "title": "Absence rates by school",
+                        "summary": "School-level absence data...",
+                        "version": "4.0",
+                        "published": "2024-10-01",
+                    },
+                    {
+                        "id": "ds-xyz2",
+                        "title": "Absence by reason",
+                        "summary": "Breakdown of absence reasons...",
+                        "version": "3.0",
+                        "published": "2024-10-01",
+                    },
+                ],
+            }
+        ],
+    }
+
+    with patch.object(server, "get_ees", return_value=mock_ees):
+        result = await server._handle_discover_dataset({"topic": "absence"})
+
+    text = result[0].text
+    assert "Pupil Absence" in text
+    assert "pub-abc" in text
+    assert "ds-xyz" in text
+    assert "ds-xyz2" in text
+    assert "Absence rates by school" in text
+    assert "Absence by reason" in text
+    assert "get_dataset_metadata" in text
+
+
+async def test_discover_dataset_no_publications():
+    mock_ees = AsyncMock()
+    mock_ees.discover_topic_datasets.return_value = {
+        "topic_key": "absence",
+        "title": "Pupil Absence",
+        "description": "Overall and persistent absence rates...",
+        "search_term": "pupil absence in schools in England",
+        "publications": [],
+    }
+
+    with patch.object(server, "get_ees", return_value=mock_ees):
+        result = await server._handle_discover_dataset({"topic": "absence"})
+
+    text = result[0].text
+    assert "No publications found" in text
+
+
+async def test_discover_dataset_unknown_topic():
+    mock_ees = AsyncMock()
+    mock_ees.discover_topic_datasets.side_effect = ValueError(
+        "Unknown topic 'bogus'. Available topics: absence, exclusions"
+    )
+
+    with patch.object(server, "get_ees", return_value=mock_ees):
+        result = await server._handle_discover_dataset({"topic": "bogus"})
+
+    text = result[0].text
+    assert "Unknown topic" in text
+    assert "bogus" in text
+
+
+# --- EES_TOPICS registry ---
+
+
+class TestEESTopics:
+    def test_all_topics_have_required_fields(self):
+        for key, topic in EES_TOPICS.items():
+            assert "search" in topic, f"Topic '{key}' missing 'search'"
+            assert "title" in topic, f"Topic '{key}' missing 'title'"
+            assert "description" in topic, f"Topic '{key}' missing 'description'"
+
+    def test_topic_count(self):
+        assert len(EES_TOPICS) >= 20
+
+    def test_core_topics_present(self):
+        core = ["absence", "exclusions", "ks2_performance", "gcse_performance",
+                "workforce", "sen", "applications_offers", "school_funding"]
+        for key in core:
+            assert key in EES_TOPICS, f"Core topic '{key}' missing"
